@@ -1,0 +1,17 @@
+# =============================================================================
+# BACKEND CONFIGURATION - Copy this to backend.hcl
+# =============================================================================
+#
+# Configure your S3 backend for remote state storage.
+# Then run: terraform init -backend-config=backend.hcl
+#
+# =============================================================================
+
+bucket         = "my-terraform-state-bucket"
+key            = "terraform-aws-strands/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "terraform-locks"
+encrypt        = true
+
+# Uncomment if using a named AWS CLI profile:
+# profile      = "my-profile"

@@ -1,0 +1,65 @@
+# =============================================================================
+# PRODUCTION ENVIRONMENT - Copy this to production.tfvars
+# =============================================================================
+#
+# Usage: terraform plan -var-file=production.tfvars
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core Settings
+# -----------------------------------------------------------------------------
+
+environment  = "prod"
+aws_region   = "us-east-1"
+project_name = "my-app"
+
+# Uncomment if using a named AWS CLI profile:
+# aws_profile = "production"
+
+# -----------------------------------------------------------------------------
+# VPC - Option A: Look up by tag name (recommended)
+# -----------------------------------------------------------------------------
+
+vpc_name                   = "My VPC"
+public_subnet_tag_pattern  = "*Public*"
+private_subnet_tag_pattern = "*Private*"
+
+# -----------------------------------------------------------------------------
+# VPC - Option B: Pass explicit IDs (uncomment and use instead of Option A)
+# -----------------------------------------------------------------------------
+
+# vpc_id             = "vpc-xxxxxxxxx"
+# public_subnet_ids  = ["subnet-aaa", "subnet-bbb"]
+# private_subnet_ids = ["subnet-ccc", "subnet-ddd"]
+
+# -----------------------------------------------------------------------------
+# DNS Settings
+# -----------------------------------------------------------------------------
+
+hosted_zone        = "example.com"
+subdomain          = "my-app"
+create_hosted_zone = false
+hosted_zone_id     = ""            # Required when create_hosted_zone = false
+
+# -----------------------------------------------------------------------------
+# Agent Settings
+# -----------------------------------------------------------------------------
+
+model_id         = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+agent_image_tag  = "latest"
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+
+api_key                      = ""
+secrets_recovery_window_days = 7
+waf_rate_limit               = 2000
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+
+alarm_email              = ""
+agent_log_retention_days = 14
