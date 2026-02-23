@@ -179,6 +179,15 @@ variable "mercure_environment_variables" {
   default     = {}
 }
 
+variable "mercure_secrets" {
+  description = "Secrets injected into Mercure container from Secrets Manager/SSM"
+  type = list(object({
+    name      = string
+    valueFrom = string
+  }))
+  default = []
+}
+
 variable "mercure_health_check_command" {
   description = "Mercure container health check command"
   type        = list(string)

@@ -76,6 +76,7 @@ locals {
       }
     ]
     environment = local.mercure_env
+    secrets     = var.mercure_secrets
     logConfiguration = {
       logDriver = "awslogs"
       options = {

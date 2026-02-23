@@ -172,6 +172,17 @@ variable "ecr_repository_name" {
   default     = ""
 }
 
+variable "ecr_image_tag_mutability" {
+  description = "ECR image tag mutability (MUTABLE or IMMUTABLE). Empty = auto-detect from environment (MUTABLE for dev, IMMUTABLE for prod)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = contains(["", "MUTABLE", "IMMUTABLE"], var.ecr_image_tag_mutability)
+    error_message = "Err: ecr_image_tag_mutability must be MUTABLE, IMMUTABLE, or empty (auto-detect)"
+  }
+}
+
 # =============================================================================
 # App Settings (web UI sidecar)
 # =============================================================================

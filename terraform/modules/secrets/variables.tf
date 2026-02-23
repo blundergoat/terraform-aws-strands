@@ -11,9 +11,14 @@ variable "environment" {
   type = string
 }
 
-variable "api_key" {
-  description = "API key for authenticating agent requests"
-  type        = string
+variable "secret_names" {
+  description = "List of secret names to create in Secrets Manager"
+  type        = list(string)
+}
+
+variable "secret_values" {
+  description = "Map of secret name => secret value (must contain all keys from secret_names)"
+  type        = map(string)
   sensitive   = true
 }
 

@@ -94,9 +94,8 @@ data "aws_iam_policy_document" "task_inline" {
         "bedrock:InvokeModel",
         "bedrock:InvokeModelWithResponseStream"
       ]
-      resources = [
+      resources = length(var.bedrock_model_arns) > 0 ? var.bedrock_model_arns : [
         "arn:aws:bedrock:*::foundation-model/*",
-        # inference-profile/* enables cross-region inference (us.anthropic.* model IDs).
         "arn:aws:bedrock:*:*:inference-profile/*"
       ]
     }
@@ -225,7 +224,7 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
           "ecr:UploadLayerPart",
           "ecr:CompleteLayerUpload"
         ]
-        Resource = var.ecr_repository_arn
+        Resource = var.ecr_repository_arns
       },
       {
         # ECS task definition APIs don't support resource-level permissions.

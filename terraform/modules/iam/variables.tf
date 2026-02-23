@@ -29,6 +29,12 @@ variable "enable_bedrock_access" {
   default     = true
 }
 
+variable "bedrock_model_arns" {
+  description = "Bedrock model ARNs to allow invocation on. Defaults to all foundation models and inference profiles if empty."
+  type        = list(string)
+  default     = []
+}
+
 variable "dynamodb_table_arn" {
   description = "DynamoDB table ARN for session persistence (empty to skip)"
   type        = string
@@ -50,10 +56,10 @@ variable "github_repository" {
   default     = ""
 }
 
-variable "ecr_repository_arn" {
-  description = "ECR repository ARN for push permissions"
-  type        = string
-  default     = ""
+variable "ecr_repository_arns" {
+  description = "ECR repository ARNs for push permissions"
+  type        = list(string)
+  default     = []
 }
 
 variable "ecs_cluster_arn" {

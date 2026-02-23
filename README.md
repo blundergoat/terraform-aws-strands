@@ -129,12 +129,14 @@ All three containers run in the same ECS task (shared network namespace), so the
 
 ```
 Phase 1 (independent):  dynamodb, ecr, ecr_app, observability, secrets
-Phase 2:                security (needs vpc_id), iam (needs phase 1 ARNs)
-Phase 3:                ecs (needs iam, observability, ecr), dns (needs hosted_zone_id)
+Phase 2:                security (needs vpc_id)
+Phase 3:                ecs (needs iam task roles, observability, ecr), dns (needs hosted_zone_id)
 Phase 4:                alb (needs security, dns cert, vpc/subnets)
 Phase 5:                ecs_service (needs ecs, alb, security), waf (needs alb)
 Phase 6:                alarms (needs alb, ecs)
 ```
+
+> **Note:** The IAM module spans multiple phases. Task execution and task roles are created early (needed by ECS in phase 3), but the GitHub OIDC deploy policy references phase 3-5 outputs (ECS cluster/service ARNs, ALB target group). Terraform handles this via implicit dependency resolution.
 
 ## Terraform Outputs
 

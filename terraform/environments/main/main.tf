@@ -32,11 +32,16 @@
 #
 # MODULE DEPENDENCY ORDER:
 #   1. dynamodb, ecr, ecr_app, observability, secrets (independent)
-#   2. security (needs vpc_id), iam (needs phase 1 ARNs)
-#   3. ecs (needs iam, observability, ecr), dns (needs hosted_zone_id)
+#   2. security (needs vpc_id)
+#   3. ecs (needs iam task roles, observability, ecr), dns (needs hosted_zone_id)
 #   4. alb (needs security, dns cert, vpc/subnets)
 #   5. ecs_service (needs ecs, alb, security), waf (needs alb)
 #   6. alarms (needs alb, ecs)
+#
+#   NOTE: The IAM module spans multiple phases. Task execution and task roles
+#   are created early (needed by ECS in phase 3), but the GitHub OIDC deploy
+#   policy references phase 3-5 outputs (ecs cluster/service ARNs, ALB target
+#   group). Terraform handles this via implicit dependency resolution.
 #
 # =============================================================================
 
@@ -70,6 +75,13 @@ locals {
   ecr_app_name   = var.ecr_app_repository_name != "" ? var.ecr_app_repository_name : "${var.project_name}-app"
   dynamodb_name  = var.dynamodb_table_name != "" ? var.dynamodb_table_name : "${var.project_name}-${local.env}-sessions"
   api_key_value  = var.api_key != "" ? var.api_key : random_password.api_key.result
+
+  # MUTABLE allows overwriting :latest during dev. IMMUTABLE enforces unique tags
+  # (e.g., git SHA) in production for traceability and rollback safety.
+  ecr_image_tag_mutability = (
+    var.ecr_image_tag_mutability != "" ? var.ecr_image_tag_mutability :
+    local.isDev ? "MUTABLE" : "IMMUTABLE"
+  )
 }
 
 # =============================================================================
@@ -159,22 +171,20 @@ locals {
   }
 
   # Environment variables passed to the app container.
+  # APP_SECRET and MERCURE_JWT_SECRET are injected via Secrets Manager (see app_secrets below).
   app_env = {
     APP_ENV            = local.env
     APP_DEBUG          = local.isDev ? "1" : "0"
-    APP_SECRET         = random_password.app_secret.result
     AGENT_ENDPOINT     = "http://localhost:8000"
     MERCURE_URL        = "http://localhost:3701/.well-known/mercure"
     MERCURE_PUBLIC_URL = "https://${var.subdomain}.${var.hosted_zone}/.well-known/mercure"
-    MERCURE_JWT_SECRET = random_password.mercure_jwt_secret.result
   }
 
   # Environment variables for the Mercure sidecar container.
+  # JWT keys are injected via Secrets Manager (see mercure_secrets below).
   mercure_env = {
-    MERCURE_PUBLISHER_JWT_KEY  = random_password.mercure_jwt_secret.result
-    MERCURE_SUBSCRIBER_JWT_KEY = random_password.mercure_jwt_secret.result
-    SERVER_NAME                = ":3701"
-    MERCURE_EXTRA_DIRECTIVES   = "anonymous\ncors_origins https://${var.subdomain}.${var.hosted_zone}"
+    SERVER_NAME              = ":3701"
+    MERCURE_EXTRA_DIRECTIVES = "anonymous\ncors_origins https://${var.subdomain}.${var.hosted_zone}"
   }
 }
 
@@ -189,18 +199,16 @@ module "dynamodb" {
 }
 
 module "ecr" {
-  source          = "../../modules/ecr"
-  repository_name = local.ecr_agent_name
-  # MUTABLE allows overwriting :latest during development. Production pipelines
-  # should push unique tags (git SHA) for traceability.
-  image_tag_mutability = "MUTABLE"
+  source               = "../../modules/ecr"
+  repository_name      = local.ecr_agent_name
+  image_tag_mutability = local.ecr_image_tag_mutability
   tags                 = local.tags
 }
 
 module "ecr_app" {
   source               = "../../modules/ecr"
   repository_name      = local.ecr_app_name
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = local.ecr_image_tag_mutability
   tags                 = local.tags
 }
 
@@ -215,10 +223,15 @@ module "observability" {
 }
 
 module "secrets" {
-  source                  = "../../modules/secrets"
-  project_name            = var.project_name
-  environment             = local.env
-  api_key                 = local.api_key_value
+  source       = "../../modules/secrets"
+  project_name = var.project_name
+  environment  = local.env
+  secret_names = ["api-key", "app-secret", "mercure-jwt-secret"]
+  secret_values = {
+    "api-key"            = local.api_key_value
+    "app-secret"         = random_password.app_secret.result
+    "mercure-jwt-secret" = random_password.mercure_jwt_secret.result
+  }
   recovery_window_in_days = var.secrets_recovery_window_days
   tags                    = local.tags
 }
@@ -243,14 +256,18 @@ module "iam" {
   source                = "../../modules/iam"
   project_name          = var.project_name
   environment           = local.env
-  secrets_arns          = [module.secrets.api_key_secret_arn]
+  secrets_arns          = values(module.secrets.secret_arns)
   dynamodb_table_arn    = module.dynamodb.table_arn
   enable_bedrock_access = true
-  tags                  = local.tags
+  bedrock_model_arns = [
+    "arn:aws:bedrock:*::foundation-model/anthropic.*",
+    "arn:aws:bedrock:*:*:inference-profile/us.anthropic.*"
+  ]
+  tags = local.tags
 
   # GitHub OIDC for CI/CD (optional)
   github_repository    = var.github_repository
-  ecr_repository_arn   = module.ecr.repository_arn
+  ecr_repository_arns  = [module.ecr.repository_arn, module.ecr_app.repository_arn]
   ecs_cluster_arn      = module.ecs.cluster_arn
   ecs_service_arn      = module.ecs_service.service_arn
   log_group_arns       = ["${module.observability.agent_log_group_arn}:*", "${module.observability.app_log_group_arn}:*", "${module.observability.mercure_log_group_arn}:*"]
@@ -291,11 +308,19 @@ module "ecs" {
   app_image                 = "${module.ecr_app.repository_url}:${var.app_image_tag}"
   log_group_name_app        = module.observability.app_log_group_name
   app_environment_variables = local.app_env
+  app_secrets = [
+    { name = "APP_SECRET", valueFrom = module.secrets.secret_arns["app-secret"] },
+    { name = "MERCURE_JWT_SECRET", valueFrom = module.secrets.secret_arns["mercure-jwt-secret"] }
+  ]
 
   # Mercure container (SSE hub, ALB path-routed)
   mercure_image                 = var.mercure_image
   log_group_name_mercure        = module.observability.mercure_log_group_name
   mercure_environment_variables = local.mercure_env
+  mercure_secrets = [
+    { name = "MERCURE_PUBLISHER_JWT_KEY", valueFrom = module.secrets.secret_arns["mercure-jwt-secret"] },
+    { name = "MERCURE_SUBSCRIBER_JWT_KEY", valueFrom = module.secrets.secret_arns["mercure-jwt-secret"] }
+  ]
 }
 
 module "dns" {
